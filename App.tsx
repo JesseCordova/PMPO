@@ -8,7 +8,7 @@ import { MaintenanceForm } from './components/MaintenanceForm';
 import { ReportView } from './components/ReportView';
 import { AppState, Organ, Maintenance, Location, Administration, DeletedItem } from './types';
 import { INITIAL_LOCATIONS } from './constants';
-import { Home, ChevronRight, Lock, X, ArrowRight, Trash2, AlertTriangle } from 'lucide-react';
+import { Home, ChevronRight, Lock, X, ArrowRight, Trash2, HelpCircle } from 'lucide-react';
 
 type ViewType = 'home' | 'adm-detail' | 'location-detail' | 'register-organ' | 'edit-organ' | 'register-maintenance' | 'edit-maintenance' | 'reports';
 
@@ -22,9 +22,11 @@ const App: React.FC = () => {
   // Action protection state
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
+  const [passwordHint, setPasswordHint] = useState('');
   const [reasonInput, setReasonInput] = useState('');
   const [passwordError, setPasswordError] = useState(false);
-  const [pendingAction, setPendingAction] = useState<{ type: 'organ' | 'maintenance', id: string, mode: 'edit' | 'delete' } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ type: 'organ' | 'maintenance' | 'history', id?: string, mode: 'edit' | 'delete' | 'view' } | null>(null);
+  const [isHistoryAuthorized, setIsHistoryAuthorized] = useState(false);
 
   const [state, setState] = useState<AppState>(() => {
     const saved = localStorage.getItem('organ_maintenance_state');
@@ -41,11 +43,31 @@ const App: React.FC = () => {
     localStorage.setItem('organ_maintenance_state', JSON.stringify(state));
   }, [state]);
 
+  const generateHint = () => {
+    return Math.floor(1000 + Math.random() * 9000).toString();
+  };
+
+  const calculateExpectedPassword = (hint: string) => {
+    return hint.split('').map((char, index) => {
+      const digit = parseInt(char);
+      const factor = index + 1;
+      // Regra: (Dígito da dica + 1) * (Sua posição 1-4)
+      const res = (digit + 1) * factor;
+      // Caso res > 9, pega o número da segunda casa (unidade)
+      return res % 10;
+    }).join('');
+  };
+
   const isMaintenancePending = (organId: string) => {
     const organMaintenances = state.maintenances.filter(m => m.organId === organId);
     if (organMaintenances.length === 0) return true;
     
-    const lastDate = new Date(Math.max(...organMaintenances.map(m => new Date(m.date).getTime())));
+    const lastDateString = organMaintenances.reduce((prev, curr) => 
+      new Date(curr.date) > new Date(prev) ? curr.date : prev, 
+      organMaintenances[0].date
+    );
+    
+    const lastDate = new Date(lastDateString + 'T00:00:00');
     const oneYearAgo = new Date();
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
     
@@ -141,23 +163,26 @@ const App: React.FC = () => {
     }));
   };
 
-  const requestAction = (type: 'organ' | 'maintenance', id: string, mode: 'edit' | 'delete') => {
+  const requestAction = (type: 'organ' | 'maintenance' | 'history', id: string | undefined, mode: 'edit' | 'delete' | 'view') => {
     setPendingAction({ type, id, mode });
     setReasonInput('');
     setPasswordInput('');
+    setPasswordHint(generateHint());
     setShowPasswordModal(true);
   };
 
   const handleActionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordInput === '1234') {
+    const expected = calculateExpectedPassword(passwordHint);
+    
+    if (passwordInput === expected) {
       if (!pendingAction) return;
 
       if (pendingAction.mode === 'edit') {
-        if (pendingAction.type === 'organ') {
+        if (pendingAction.type === 'organ' && pendingAction.id) {
           setSelectedOrganId(pendingAction.id);
           setView('edit-organ');
-        } else if (pendingAction.type === 'maintenance') {
+        } else if (pendingAction.type === 'maintenance' && pendingAction.id) {
           setSelectedMaintenanceId(pendingAction.id);
           setView('edit-maintenance');
         }
@@ -166,11 +191,13 @@ const App: React.FC = () => {
           alert('Por favor, informe o motivo da exclusão.');
           return;
         }
-        if (pendingAction.type === 'organ') {
+        if (pendingAction.type === 'organ' && pendingAction.id) {
           handleDeleteOrgan(pendingAction.id, reasonInput);
-        } else if (pendingAction.type === 'maintenance') {
+        } else if (pendingAction.type === 'maintenance' && pendingAction.id) {
           handleDeleteMaintenance(pendingAction.id, reasonInput);
         }
+      } else if (pendingAction.mode === 'view' && pendingAction.type === 'history') {
+        setIsHistoryAuthorized(true);
       }
 
       setShowPasswordModal(false);
@@ -180,6 +207,9 @@ const App: React.FC = () => {
       setPendingAction(null);
     } else {
       setPasswordError(true);
+      // Atualiza a dica imediatamente após o erro
+      setPasswordHint(generateHint());
+      setPasswordInput(''); // Limpa o campo para nova tentativa
       setTimeout(() => setPasswordError(false), 2000);
     }
   };
@@ -304,6 +334,8 @@ const App: React.FC = () => {
                 isMaintenancePending={isMaintenancePending}
                 onEditMaintenance={(id) => requestAction('maintenance', id, 'edit')}
                 onDeleteMaintenance={(id) => requestAction('maintenance', id, 'delete')}
+                isHistoryAuthorized={isHistoryAuthorized}
+                onRequestHistoryAccess={() => requestAction('history', undefined, 'view')}
               />
             )}
           </div>
@@ -322,14 +354,29 @@ const App: React.FC = () => {
               </div>
               
               <div className="space-y-1">
-                <h3 className="text-2xl font-black text-slate-800 tracking-tight">
-                  {pendingAction?.mode === 'delete' ? 'Confirmar Exclusão' : 'Acesso Restrito'}
+                <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-tight">
+                  {pendingAction?.mode === 'delete' ? 'Confirmar Exclusão' : pendingAction?.mode === 'view' ? 'Acesso ao Histórico' : 'Acesso Restrito'}
                 </h3>
-                <p className="text-slate-500 text-sm font-medium">
-                  {pendingAction?.mode === 'delete' 
-                    ? 'Esta ação não pode ser desfeita. Informe o motivo e a senha.' 
-                    : 'Digite a senha para habilitar a edição do registro.'}
-                </p>
+                {pendingAction?.mode === 'delete' && (
+                  <p className="text-slate-500 text-sm font-medium">
+                    Informe o motivo para prosseguir.
+                  </p>
+                )}
+              </div>
+
+              {/* Dica de Senha Dinâmica */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center justify-center gap-2 text-slate-400">
+                  <HelpCircle size={14} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Dica de Acesso</span>
+                </div>
+                <div className="flex justify-center gap-3">
+                  {passwordHint.split('').map((digit, i) => (
+                    <div key={i} className="w-10 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-xl font-black text-blue-600 shadow-sm">
+                      {digit}
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <form onSubmit={handleActionSubmit} className="space-y-4">
@@ -341,18 +388,20 @@ const App: React.FC = () => {
                       required
                       value={reasonInput}
                       onChange={(e) => setReasonInput(e.target.value)}
-                      placeholder="Ex: Erro de cadastro, Venda do instrumento..."
-                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-red-500 focus:bg-white transition-all text-sm font-medium min-h-[100px]"
+                      placeholder="Ex: Erro de cadastro..."
+                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-red-500 focus:bg-white transition-all text-sm font-medium min-h-[80px]"
                     />
                   </div>
                 )}
                 
                 <div className="space-y-1 text-left">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Senha de Autorização</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Senha</label>
                   <input 
                     type="password"
+                    inputMode="numeric"
+                    autoFocus={pendingAction?.mode !== 'delete'}
                     value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
+                    onChange={(e) => setPasswordInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
                     placeholder="••••"
                     className={`w-full p-4 bg-slate-50 border rounded-2xl outline-none transition-all text-center text-lg font-bold tracking-widest focus:bg-white ${
                       passwordError ? 'border-red-500 bg-red-50 text-red-600 animate-shake' : 'border-slate-200 focus:border-blue-500'
@@ -380,7 +429,7 @@ const App: React.FC = () => {
                         : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'
                     }`}
                   >
-                    Confirmar
+                    Validar
                     <ArrowRight size={18} />
                   </button>
                 </div>

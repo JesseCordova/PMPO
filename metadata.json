@@ -1,0 +1,7 @@
+{
+  "name": "Gestão de Manutenção de Órgãos",
+  "description": "Sistema completo para registro, histórico e relatórios de manutenção de órgãos eletrônicos com alertas de pendência anual.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

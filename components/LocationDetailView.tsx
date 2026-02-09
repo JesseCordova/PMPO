@@ -334,6 +334,23 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
           </div>
         </div>
       )}
+      {/* Photo Modal */}
+      {selectedPhoto && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+            <img src={selectedPhoto} alt="Visualização Ampliada" className="w-full h-full object-contain" />
+            <button
+              onClick={() => setSelectedPhoto(null)}
+              className="absolute top-4 right-4 w-10 h-10 bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

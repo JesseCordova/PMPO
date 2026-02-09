@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { collection, doc, setDoc, onSnapshot, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { AdmSelectionView } from './components/AdmSelectionView';
 import { AdmDashboardView } from './components/AdmDashboardView';
 import { LocationDetailView } from './components/LocationDetailView';
@@ -9,6 +10,7 @@ import { ReportView } from './components/ReportView';
 import { AppState, Organ, Maintenance, Location, Administration, DeletedItem } from './types';
 import { INITIAL_LOCATIONS } from './constants';
 import { Home, ChevronRight, Lock, X, ArrowRight, Trash2, HelpCircle } from 'lucide-react';
+import { db } from './services/firebase';
 
 type ViewType = 'home' | 'adm-detail' | 'location-detail' | 'register-organ' | 'edit-organ' | 'register-maintenance' | 'edit-maintenance' | 'reports';
 
@@ -28,20 +30,75 @@ const App: React.FC = () => {
   const [pendingAction, setPendingAction] = useState<{ type: 'organ' | 'maintenance' | 'history', id?: string, mode: 'edit' | 'delete' | 'view' } | null>(null);
   const [isHistoryAuthorized, setIsHistoryAuthorized] = useState(false);
 
-  const [state, setState] = useState<AppState>(() => {
-    const saved = localStorage.getItem('organ_maintenance_state');
-    if (saved) return JSON.parse(saved);
-    return {
-      organs: [],
-      maintenances: [],
-      locations: INITIAL_LOCATIONS,
-      deletedItems: [],
-    };
+  const [state, setState] = useState<AppState>({
+    organs: [],
+    maintenances: [],
+    locations: INITIAL_LOCATIONS,
+    deletedItems: [],
   });
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    localStorage.setItem('organ_maintenance_state', JSON.stringify(state));
-  }, [state]);
+    let remaining = 3;
+    const markLoaded = () => {
+      remaining -= 1;
+      if (remaining <= 0) setIsLoading(false);
+    };
+
+    const unsubOrgans = onSnapshot(
+      collection(db, 'organs'),
+      (snap) => {
+        const organs = snap.docs.map((d) => {
+          const data = d.data() as Organ;
+          return { ...data, id: data.id || d.id };
+        });
+        setState((prev) => ({ ...prev, organs }));
+        markLoaded();
+      },
+      (err) => {
+        console.error('Erro ao carregar orgaos:', err);
+        markLoaded();
+      }
+    );
+
+    const unsubMaintenances = onSnapshot(
+      collection(db, 'maintenances'),
+      (snap) => {
+        const maintenances = snap.docs.map((d) => {
+          const data = d.data() as Maintenance;
+          return { ...data, id: data.id || d.id };
+        });
+        setState((prev) => ({ ...prev, maintenances }));
+        markLoaded();
+      },
+      (err) => {
+        console.error('Erro ao carregar manutencoes:', err);
+        markLoaded();
+      }
+    );
+
+    const unsubDeleted = onSnapshot(
+      collection(db, 'deletedItems'),
+      (snap) => {
+        const deletedItems = snap.docs.map((d) => {
+          const data = d.data() as DeletedItem;
+          return { ...data, id: data.id || d.id };
+        });
+        setState((prev) => ({ ...prev, deletedItems }));
+        markLoaded();
+      },
+      (err) => {
+        console.error('Erro ao carregar historico:', err);
+        markLoaded();
+      }
+    );
+
+    return () => {
+      unsubOrgans();
+      unsubMaintenances();
+      unsubDeleted();
+    };
+  }, []);
 
   const generateHint = () => {
     return Math.floor(1000 + Math.random() * 9000).toString();
@@ -85,20 +142,27 @@ const App: React.FC = () => {
     return admLocations.some(l => isLocationPending(l.id));
   };
 
-  const handleAddOrgan = (organ: Organ) => {
-    setState(prev => ({ ...prev, organs: [...prev.organs, organ] }));
-    setView('location-detail');
+  const handleAddOrgan = async (organ: Organ) => {
+    try {
+      await setDoc(doc(db, 'organs', organ.id), organ);
+      setView('location-detail');
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao salvar o orgao.');
+    }
   };
 
-  const handleUpdateOrgan = (updatedOrgan: Organ) => {
-    setState(prev => ({
-      ...prev,
-      organs: prev.organs.map(o => o.id === updatedOrgan.id ? updatedOrgan : o)
-    }));
-    setView('location-detail');
+  const handleUpdateOrgan = async (updatedOrgan: Organ) => {
+    try {
+      await setDoc(doc(db, 'organs', updatedOrgan.id), updatedOrgan);
+      setView('location-detail');
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao atualizar o orgao.');
+    }
   };
 
-  const handleDeleteOrgan = (id: string, reason: string) => {
+  const handleDeleteOrgan = async (id: string, reason: string) => {
     const organToDelete = state.organs.find(o => o.id === id);
     if (!organToDelete) return;
 
@@ -115,29 +179,46 @@ const App: React.FC = () => {
         adm: location?.adm
       }
     };
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'deletedItems', deletedItem.id), deletedItem);
+      batch.delete(doc(db, 'organs', id));
 
-    setState(prev => ({
-      ...prev,
-      organs: prev.organs.filter(o => o.id !== id),
-      maintenances: prev.maintenances.filter(m => m.organId !== id),
-      deletedItems: [deletedItem, ...prev.deletedItems]
-    }));
+      const maintQuery = query(
+        collection(db, 'maintenances'),
+        where('organId', '==', id)
+      );
+      const maintSnap = await getDocs(maintQuery);
+      maintSnap.forEach((m) => batch.delete(doc(db, 'maintenances', m.id)));
+
+      await batch.commit();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao excluir o orgao.');
+    }
   };
 
-  const handleAddMaintenance = (maintenance: Maintenance) => {
-    setState(prev => ({ ...prev, maintenances: [...prev.maintenances, maintenance] }));
-    setView('location-detail');
+  const handleAddMaintenance = async (maintenance: Maintenance) => {
+    try {
+      await setDoc(doc(db, 'maintenances', maintenance.id), maintenance);
+      setView('location-detail');
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao salvar a manutencao.');
+    }
   };
 
-  const handleUpdateMaintenance = (updatedMaintenance: Maintenance) => {
-    setState(prev => ({
-      ...prev,
-      maintenances: prev.maintenances.map(m => m.id === updatedMaintenance.id ? updatedMaintenance : m)
-    }));
-    if (view === 'edit-maintenance') setView('reports');
+  const handleUpdateMaintenance = async (updatedMaintenance: Maintenance) => {
+    try {
+      await setDoc(doc(db, 'maintenances', updatedMaintenance.id), updatedMaintenance);
+      if (view === 'edit-maintenance') setView('reports');
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao atualizar a manutencao.');
+    }
   };
 
-  const handleDeleteMaintenance = (id: string, reason: string) => {
+  const handleDeleteMaintenance = async (id: string, reason: string) => {
     const maintenanceToDelete = state.maintenances.find(m => m.id === id);
     if (!maintenanceToDelete) return;
 
@@ -155,12 +236,15 @@ const App: React.FC = () => {
         adm: location?.adm
       }
     };
-
-    setState(prev => ({
-      ...prev,
-      maintenances: prev.maintenances.filter(m => m.id !== id),
-      deletedItems: [deletedItem, ...prev.deletedItems]
-    }));
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'deletedItems', deletedItem.id), deletedItem);
+      batch.delete(doc(db, 'maintenances', id));
+      await batch.commit();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao excluir a manutencao.');
+    }
   };
 
   const requestAction = (type: 'organ' | 'maintenance' | 'history', id: string | undefined, mode: 'edit' | 'delete' | 'view') => {
@@ -270,7 +354,13 @@ const App: React.FC = () => {
 
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-6xl mx-auto">
-            {view === 'home' && (
+            {isLoading && (
+              <div className="py-16 text-center text-slate-400 font-bold tracking-widest uppercase text-sm">
+                Carregando dados...
+              </div>
+            )}
+
+            {!isLoading && view === 'home' && (
               <AdmSelectionView 
                 isAdmPending={isAdmPending} 
                 onSelectAdm={(adm) => { setSelectedAdm(adm); setView('adm-detail'); }}
@@ -278,7 +368,7 @@ const App: React.FC = () => {
               />
             )}
 
-            {view === 'adm-detail' && selectedAdm && (
+            {!isLoading && view === 'adm-detail' && selectedAdm && (
               <AdmDashboardView 
                 adm={selectedAdm}
                 state={state}
@@ -290,7 +380,7 @@ const App: React.FC = () => {
               />
             )}
 
-            {view === 'location-detail' && selectedLocationId && (
+            {!isLoading && view === 'location-detail' && selectedLocationId && (
               <LocationDetailView 
                 locationId={selectedLocationId}
                 state={state}
@@ -307,7 +397,7 @@ const App: React.FC = () => {
               />
             )}
 
-            {(view === 'register-organ' || view === 'edit-organ') && selectedLocationId && (
+            {!isLoading && (view === 'register-organ' || view === 'edit-organ') && selectedLocationId && (
               <OrganForm 
                 locationId={selectedLocationId}
                 locations={state.locations}
@@ -317,7 +407,7 @@ const App: React.FC = () => {
               />
             )}
 
-            {(view === 'register-maintenance' || view === 'edit-maintenance') && (
+            {!isLoading && (view === 'register-maintenance' || view === 'edit-maintenance') && (
               <MaintenanceForm 
                 organs={state.organs}
                 locations={state.locations}
@@ -328,7 +418,7 @@ const App: React.FC = () => {
               />
             )}
 
-            {view === 'reports' && (
+            {!isLoading && view === 'reports' && (
               <ReportView 
                 state={state}
                 isMaintenancePending={isMaintenancePending}

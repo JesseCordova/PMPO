@@ -303,14 +303,15 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
 
                     {m.photos.length > 0 && (
                       <div className="mt-4 flex flex-wrap gap-2">
-                         {m.photos.slice(0, 3).map((photo, i) => (
-                           <img key={i} src={photo} className="w-12 h-12 object-cover rounded-lg border border-white shadow-sm" alt="Thumbnail" />
-                         ))}
-                         {m.photos.length > 3 && (
-                           <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-[10px] font-bold text-slate-500 border border-slate-200">
-                             +{m.photos.length - 3}
-                           </div>
-                         )}
+                        {m.photos.map((photo, i) => (
+                          <img 
+                            key={i} 
+                            src={photo} 
+                            onClick={() => setSelectedPhoto(photo)} 
+                            className="w-16 h-16 object-cover rounded-xl border-2 border-white shadow-lg cursor-pointer transition-transform hover:scale-110 hover:shadow-md" 
+                            alt={`Thumbnail ${i+1}`} 
+                          />
+                        ))}
                       </div>
                     )}
                   </div>

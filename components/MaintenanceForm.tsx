@@ -4,6 +4,80 @@ import { Organ, Maintenance, Location, MaintenancePart } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { Camera, Trash2, Plus, Image as ImageIcon, Save, X } from 'lucide-react';
 
+
+const compressImage = (file: File): Promise<string> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (event: ProgressEvent<FileReader>) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const elem = document.createElement('canvas');
+        const MAX_WIDTH = 800; // Define a largura máxima para a imagem
+        const MAX_HEIGHT = 600; // Define a altura máxima para a imagem
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        elem.width = width;
+        elem.height = height;
+        const ctx = elem.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(ctx?.canvas.toDataURL('image/jpeg', 0.7) || ''); // Comprime para JPEG com qualidade de 70%
+      };
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+
+const compressImage = (file: File): Promise<string> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (event: ProgressEvent<FileReader>) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Compress to JPEG with 70% quality
+      };
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
 interface MaintenanceFormProps {
   organs: Organ[];
   locations: Location[];
@@ -50,7 +124,32 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ organs, locati
     }
   }, [initialOrganId, initialData]);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.7)); // Compress to JPEG with 70% quality
+        } else {
+          resolve(img.src); // Fallback if canvas context is not available
+        }
+      };
+      img.onerror = () => {
+        resolve(img.src); // Fallback on error
+      };
+    });
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
       const remainingSlots = 10 - photos.length;
@@ -66,15 +165,12 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ organs, locati
         alert(`Apenas as primeiras ${remainingSlots} fotos serão adicionadas para respeitar o limite de 10.`);
       }
 
-      filesToProcess.forEach(file => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setPhotos(prev => {
-            if (prev.length >= 10) return prev;
-            return [...prev, reader.result as string];
-          });
-        };
-        reader.readAsDataURL(file as File);
+      filesToProcess.forEach(async (file) => {
+        const compressedImage = await compressImage(file);
+        setPhotos((prev) => {
+          if (prev.length >= 10) return prev;
+          return [...prev, compressedImage];
+        });
       });
     }
   };

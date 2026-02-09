@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { collection, doc, setDoc, onSnapshot, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { AdmSelectionView } from './components/AdmSelectionView';
 import { AdmDashboardView } from './components/AdmDashboardView';
 import { LocationDetailView } from './components/LocationDetailView';
@@ -10,7 +11,7 @@ import { ReportView } from './components/ReportView';
 import { AppState, Organ, Maintenance, Location, Administration, DeletedItem } from './types';
 import { INITIAL_LOCATIONS } from './constants';
 import { Home, ChevronRight, Lock, X, ArrowRight, Trash2, HelpCircle } from 'lucide-react';
-import { db } from './services/firebase';
+import { db, auth } from './services/firebase';
 
 type ViewType = 'home' | 'adm-detail' | 'location-detail' | 'register-organ' | 'edit-organ' | 'register-maintenance' | 'edit-maintenance' | 'reports';
 
@@ -37,8 +38,25 @@ const App: React.FC = () => {
     deletedItems: [],
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setIsAuthReady(true);
+        return;
+      }
+      signInAnonymously(auth).catch((err) => {
+        console.error('Erro ao autenticar anonimamente:', err);
+      });
+    });
+
+    return () => unsubAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
     let remaining = 3;
     const markLoaded = () => {
       remaining -= 1;
@@ -98,7 +116,7 @@ const App: React.FC = () => {
       unsubMaintenances();
       unsubDeleted();
     };
-  }, []);
+  }, [isAuthReady]);
 
   const generateHint = () => {
     return Math.floor(1000 + Math.random() * 9000).toString();

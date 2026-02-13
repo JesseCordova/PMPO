@@ -10,8 +10,8 @@ import { MaintenanceForm } from './components/MaintenanceForm';
 import { ReportView } from './components/ReportView';
 import { AppState, Organ, Maintenance, Location, Administration, DeletedItem } from './types';
 import { INITIAL_LOCATIONS } from './constants';
-import { Home, ChevronRight, Lock, X, ArrowRight, Trash2, HelpCircle } from 'lucide-react';
-import { db, auth } from './services/firebase';
+import { Home, ChevronRight, Lock, X, ArrowRight, Trash2, HelpCircle, AlertCircle } from 'lucide-react';
+import { db, auth, isFirebaseConfigured } from './services/firebase';
 
 type ViewType = 'home' | 'adm-detail' | 'location-detail' | 'register-organ' | 'edit-organ' | 'register-maintenance' | 'edit-maintenance' | 'reports';
 
@@ -41,6 +41,8 @@ const App: React.FC = () => {
   const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
+    if (!isFirebaseConfigured || !auth) return;
+
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         setIsAuthReady(true);
@@ -317,6 +319,46 @@ const App: React.FC = () => {
   };
 
   const currentLevelLocation = state.locations.find(l => l.id === selectedLocationId);
+
+  if (!isFirebaseConfigured || !db || !auth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="max-w-md w-full bg-white rounded-[32px] shadow-2xl p-8 text-center space-y-6 border border-slate-100 animate-in fade-in zoom-in-95 duration-500">
+          <div className="w-20 h-20 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto border border-amber-100 shadow-inner">
+            <AlertCircle className="text-amber-600" size={40} />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight">Configuração Necessária</h1>
+            <p className="text-slate-500 font-medium">
+              As chaves do Firebase não foram encontradas ou estão incompletas.
+            </p>
+          </div>
+          <div className="bg-slate-50 rounded-2xl p-6 text-left space-y-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Como resolver:</p>
+            <ol className="text-sm text-slate-600 space-y-3 font-medium">
+              <li className="flex gap-3">
+                <span className="flex-none w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[10px] font-black">1</span>
+                Crie um arquivo <code className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold">.env</code> na raiz do projeto.
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-none w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[10px] font-black">2</span>
+                Copie o conteúdo de <code className="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold">.env.example</code>.
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-none w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[10px] font-black">3</span>
+                Insira suas chaves do Firebase Console.
+              </li>
+            </ol>
+          </div>
+          <div className="pt-2">
+            <p className="text-[10px] text-slate-400 uppercase font-black tracking-[0.2em]">
+              O sistema utiliza Firestore e Auth (Anônimo)
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-900">
